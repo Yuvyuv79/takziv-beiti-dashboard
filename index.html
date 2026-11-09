@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>תקציב ביתי</title>
+<style>
+:root{
+  --bg:#f6f3ec; --surface:#ffffff; --surface-2:#efe9db; --fg:#2a2620; --fg-dim:#726b5c;
+  --accent:#b5652f; --accent-ink:#5c2c10; --border:#ddd4c0;
+  --positive:#3f7d58; --negative:#b3432f; color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1b1815; --surface:#262220; --surface-2:#332d28; --fg:#efe7db; --fg-dim:#a99d8a;
+    --accent:#e08a4f; --accent-ink:#ffd9b8; --border:#45392f;
+    --positive:#6fbf8e; --negative:#e08070; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1b1815; --surface:#262220; --surface-2:#332d28; --fg:#efe7db; --fg-dim:#a99d8a;
+  --accent:#e08a4f; --accent-ink:#ffd9b8; --border:#45392f;
+  --positive:#6fbf8e; --negative:#e08070; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:'Assistant',system-ui,sans-serif;direction:rtl;margin:0;padding-block:1.25rem;padding-left:16px;padding-right:16px}
+h1,h2,.num{font-family:'Frank Ruhl Libre',Georgia,serif}
+h1{font-size:1.5rem;font-weight:700;margin:0;text-wrap:balance}
+h2{font-size:1.05rem;font-weight:500;margin:0 0 .75rem}
+.sub{color:var(--fg-dim);font-size:.85rem}
+.wrap{max-width:860px;margin:0 auto}
+.topbar{position:sticky;top:0;z-index:5;background:var(--bg);padding-block:.6rem;margin-bottom:.75rem;border-bottom:1px solid var(--border)}
+.filters{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+select,button.pill{font:inherit;font-size:.85rem;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:999px;padding:.4rem .9rem;cursor:pointer}
+button.pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.6rem;margin-bottom:1rem}
+.score .lbl{font-size:.78rem;color:var(--fg-dim);margin-bottom:.3rem}
+.score .num{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}
+.delta{font-size:.78rem;margin-top:.2rem;font-variant-numeric:tabular-nums}
+.delta.up{color:var(--negative)} .delta.down{color:var(--positive)}
+.section{margin-bottom:1.25rem}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+@media (max-width:560px){.twocol{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:right;color:var(--fg-dim);font-weight:500;font-size:.78rem;padding:.4rem .3rem;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap}
+td{padding:.45rem .3rem;border-bottom:1px solid var(--border);vertical-align:top}
+td.amt,th.amt{font-variant-numeric:tabular-nums;text-align:left}
+tbody tr:hover{background:var(--surface-2)}
+.tablewrap{overflow-x:auto}
+.msg{color:var(--fg-dim);padding:2rem 0;text-align:center}
+.pill-row{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.chip{font-size:.75rem;background:var(--surface-2);color:var(--fg-dim);border-radius:8px;padding:.25rem .55rem;font-variant-numeric:tabular-nums}
+footer{color:var(--fg-dim);font-size:.75rem;text-align:center;margin-top:1.5rem}
+a{color:var(--accent)}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Assistant:wght@400;500;600;700&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>תקציב ביתי</h1>
+    <div class="sub" id="status">טוען נתונים…</div>
+    <div class="filters" id="filters" style="margin-top:.5rem"></div>
+  </div>
+  <div id="app"></div>
+  <footer>הנתונים נטענים ישירות מה-Google Sheet • <span id="updated"></span></footer>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const SHEET_ID = '19jhtzzQfI4-E5bWH91yqdr3Qz5MUmsn-NsD7Q34NTVc';
+const GID = '542073786'; // tab: נתונים
+const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+
+function parseCSV(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ field += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else { field += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\r'){ /* skip */ }
+      else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else { field += c; }
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+function parseMonthStr(s){
+  if(!s) return null;
+  const parts = s.split(/[\/\-]/).map(x=>parseInt(x,10));
+  if(parts.length<3 || parts.some(isNaN)) return null;
+  let [a,b,y] = parts;
+  let month = a, day = b;
+  if(a>12 && b<=12){ month=b; day=a; }
+  return {year:y, month};
+}
+
+function monthLabel(y,m){
+  const names=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  return `${names[m-1]} ${y}`;
+}
+
+let STATE = { rows: [], owner:'all', month:null, sortKey:'date', sortDir:-1 };
+
+async function loadData(){
+  const res = await fetch(CSV_URL, {cache:'no-store'});
+  if(!res.ok) throw new Error('שגיאה בטעינת הגיליון ('+res.status+')');
+  const text = await res.text();
+  const table = parseCSV(text);
+  const header = table[0] || [];
+  const col = name => header.indexOf(name);
+  const iDate = col('תאריך'), iBiz = col('בית עסק'), iAmt = col('סכום'), iCat = col('קטגוריה'),
+        iOwner = col('בעלים'), iType = col('סוג הוצאה');
+  STATE.rows = table.slice(1).filter(r=>r.length>1 && r[iDate]).map(r=>{
+    const date = r[iDate];
+    const mo = parseMonthStr(date);
+    const amount = Number(String(r[iAmt]||'0').replace(/,/g,'')) || 0;
+    const type = (r[iType]||'').trim();
+    return {
+      date, dateObj: new Date(date),
+      month: mo, monthKey: mo? `${mo.year}-${String(mo.month).padStart(2,'0')}` : 'unk',
+      biz: r[iBiz]||'', amount,
+      cat: r[iCat] && r[iCat].trim() !== '' ? r[iCat].trim() : 'שונות',
+      owner: (r[iOwner]||'לא הוגדר').trim(),
+      type: type==='קבוע' ? 'קבוע' : 'משתנה'
+    };
+  });
+}
+
+function filteredRows(){
+  return STATE.rows.filter(r => STATE.owner==='all' || r.owner===STATE.owner);
+}
+
+function monthsAvailable(){
+  const keys = new Set(filteredRows().map(r=>r.monthKey).filter(k=>k!=='unk'));
+  return [...keys].sort();
+}
+
+function fmtILS(n){
+  const sign = n<0 ? '-' : '';
+  return sign + '₪' + Math.abs(Math.round(n)).toLocaleString('he-IL');
+}
+
+function renderFilters(){
+  const months = monthsAvailable();
+  if(!STATE.month) STATE.month = months[months.length-1];
+  const owners = ['all','יובל','אביטל'];
+  const ownerLabels = {all:'הכל', 'יובל':'יובל','אביטל':'אביטל'};
+  const el = document.getElementById('filters');
+  el.innerHTML = owners.map(o=>`<button class="pill ${STATE.owner===o?'active':''}" data-owner="${o}">${ownerLabels[o]}</button>`).join('')
+    + `<select id="monthSel">${months.map(mk=>{
+        const [y,m]=mk.split('-').map(Number);
+        return `<option value="${mk}" ${mk===STATE.month?'selected':''}>${monthLabel(y,m)}</option>`;
+      }).join('')}</select>`;
+  el.querySelectorAll('button[data-owner]').forEach(b=>b.addEventListener('click',()=>{ STATE.owner=b.dataset.owner; render(); }));
+  const sel = document.getElementById('monthSel');
+  sel.addEventListener('change', ()=>{ STATE.month = sel.value; renderApp(); });
+}
+
+function computeTotals(rows){
+  let fixed=0, variable=0, total=0;
+  rows.forEach(r=>{
+    total += r.amount;
+    if(r.type==='קבוע') fixed += r.amount; else variable += r.amount;
+  });
+  return {fixed, variable, total};
+}
+
+function scorecardsHtml(){
+  const rows = filteredRows();
+  const months = monthsAvailable();
+  const idx = months.indexOf(STATE.month);
+  const curRows = rows.filter(r=>r.monthKey===STATE.month);
+  const prevKey = idx>0 ? months[idx-1] : null;
+  const prevRows = prevKey ? rows.filter(r=>r.monthKey===prevKey) : [];
+  const cur = computeTotals(curRows);
+  const prev = prevRows.length ? computeTotals(prevRows) : null;
+  const avgMonthly = months.length ? rows.reduce((s,r)=>s+r.amount,0) / months.length : 0;
+  const [curY,curM] = STATE.month.split('-').map(Number);
+
+  function deltaHtml(curVal, prevVal){
+    if(prevVal===null || prevVal===undefined || prevVal===0) return '<div class="delta sub">אין נתון קודם</div>';
+    const pct = ((curVal-prevVal)/Math.abs(prevVal))*100;
+    const good = pct < 0;
+    const cls = good?'down':'up';
+    const arrow = good?'▲':'▼';
+    const [py,pm] = prevKey.split('-').map(Number);
+    return `<div class="delta ${cls}">${arrow} ${Math.abs(pct).toFixed(0)}% מול ${monthLabel(py,pm)}</div>`;
+  }
+
+  return `<div class="grid">
+    <div class="card score"><div class="lbl">ממוצע חודשי</div><div class="num">${fmtILS(avgMonthly)}</div><div class="delta sub">${months.length} חודשים</div></div>
+    <div class="card score"><div class="lbl">הוצאות משתנות</div><div class="num">${fmtILS(cur.variable)}</div>${prev?deltaHtml(cur.variable,prev.variable):'<div class="delta sub">אין נתון קודם</div>'}</div>
+    <div class="card score"><div class="lbl">הוצאות קבועות</div><div class="num">${fmtILS(cur.fixed)}</div>${prev?deltaHtml(cur.fixed,prev.fixed):'<div class="delta sub">אין נתון קודם</div>'}</div>
+    <div class="card score"><div class="lbl">סה"כ (${monthLabel(curY,curM)})</div><div class="num">${fmtILS(cur.total)}</div>${prev?deltaHtml(cur.total,prev.total):'<div class="delta sub">אין נתון קודם</div>'}</div>
+  </div>`;
+}
+
+let donutChart=null, barChart=null;
+const PALETTE = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948','#898781'];
+
+function renderDonutAndRanking(){
+  const rows = filteredRows().filter(r=>r.monthKey===STATE.month);
+  const byCat = {};
+  rows.forEach(r=>{ byCat[r.cat] = (byCat[r.cat]||0) + r.amount; });
+  const entries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const total = entries.reduce((s,e)=>s+e[1],0) || 1;
+
+  const months = monthsAvailable();
+  const idx = months.indexOf(STATE.month);
+  const prevKey = idx>0 ? months[idx-1] : null;
+  const prevByCat = {};
+  if(prevKey){
+    filteredRows().filter(r=>r.monthKey===prevKey).forEach(r=>{ prevByCat[r.cat] = (prevByCat[r.cat]||0) + r.amount; });
+  }
+
+  const legend = entries.slice(0,8).map(([cat,val],i)=>
+    `<span style="display:flex;align-items:center;gap:4px;font-size:.75rem;color:var(--fg-dim)"><span style="width:9px;height:9px;border-radius:2px;background:${PALETTE[i%PALETTE.length]};display:inline-block"></span>${cat} ${Math.round(val/total*100)}%</span>`
+  ).join('');
+
+  const rankRows = entries.slice(0,8).map(([cat,val],i)=>{
+    const pct = Math.max(2, val/entries[0][1]*100);
+    const prevVal = prevByCat[cat];
+    let deltaTxt = '';
+    if(prevVal !== undefined && prevVal !== 0){
+      const d = ((val-prevVal)/Math.abs(prevVal))*100;
+      const good = d < 0;
+      const color = good ? 'var(--positive)' : 'var(--negative)';
+      deltaTxt = `<span style="color:${color};font-size:.72rem;margin-right:4px">${good?'▲':'▼'} ${Math.abs(d).toFixed(0)}%</span>`;
+    } else if(prevKey){
+      deltaTxt = `<span style="color:var(--fg-dim);font-size:.72rem;margin-right:4px">חדש</span>`;
+    }
+    return `<div style="margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:2px"><span>${cat}</span><span>${deltaTxt}<span style="font-variant-numeric:tabular-nums">${fmtILS(val)}</span></span></div>
+      <div style="background:var(--surface-2);border-radius:6px;height:8px"><div style="width:${pct}%;background:${PALETTE[i%PALETTE.length]};height:8px;border-radius:6px"></div></div>
+    </div>`;
+  }).join('') || '<div class="msg">אין נתונים לחודש זה</div>';
+
+  document.getElementById('donutCard').innerHTML = `<h2>התפלגות לפי קטגוריה</h2><div style="position:relative;height:200px"><canvas id="donutCanvas" role="img" aria-label="תרשים התפלגות הוצאות לפי קטגוריה"></canvas></div><div class="pill-row" style="justify-content:center">${legend}</div>`;
+  document.getElementById('rankCard').innerHTML = `<h2>דירוג קטגוריות</h2>${rankRows}`;
+
+  if(donutChart) donutChart.destroy();
+  const ctx = document.getElementById('donutCanvas');
+  donutChart = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels:entries.map(e=>e[0]), datasets:[{ data:entries.map(e=>e[1]), backgroundColor:entries.map((_,i)=>PALETTE[i%PALETTE.length]), borderColor:getComputedStyle(document.body).getPropertyValue('--surface'), borderWidth:2 }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtILS(c.parsed)}`}} } }
+  });
+}
+
+function renderMonthlyBars(){
+  const rows = filteredRows();
+  const months = monthsAvailable();
+  const fixed = months.map(mk=>computeTotals(rows.filter(r=>r.monthKey===mk)).fixed);
+  const variable = months.map(mk=>computeTotals(rows.filter(r=>r.monthKey===mk)).variable);
+  const labels = months.map(mk=>{ const [y,m]=mk.split('-').map(Number); return monthLabel(y,m); });
+  const barLegend = `<div class="pill-row" style="margin-bottom:.5rem">
+      <span style="display:flex;align-items:center;gap:4px;font-size:.75rem;color:var(--fg-dim)"><span style="width:9px;height:9px;border-radius:2px;background:#4a78b5;display:inline-block"></span>קבוע</span>
+      <span style="display:flex;align-items:center;gap:4px;font-size:.75rem;color:var(--fg-dim)"><span style="width:9px;height:9px;border-radius:2px;background:#2f8f7a;display:inline-block"></span>משתנה</span>
+    </div>`;
+  const summaryRows = months.map((mk,i)=>{
+    const [y,m]=mk.split('-').map(Number);
+    return `<tr><td>${monthLabel(y,m)}</td><td class="amt">${fmtILS(fixed[i])}</td><td class="amt">${fmtILS(variable[i])}</td><td class="amt"><b>${fmtILS(fixed[i]+variable[i])}</b></td></tr>`;
+  }).reverse().join('');
+  const summaryTable = `<div class="tablewrap" style="margin-top:.75rem"><table>
+      <thead><tr><th>חודש</th><th class="amt">קבוע</th><th class="amt">משתנה</th><th class="amt">סה"כ</th></tr></thead>
+      <tbody>${summaryRows}</tbody>
+    </table></div>`;
+  document.getElementById('barCard').innerHTML = `<h2>הוצאות לפי חודש</h2>${barLegend}<div style="position:relative;height:220px"><canvas id="barCanvas" role="img" aria-label="תרשים הוצאות חודשיות, קבוע מול משתנה"></canvas></div>${summaryTable}`;
+  if(barChart) barChart.destroy();
+  barChart = new Chart(document.getElementById('barCanvas'), {
+    type:'bar',
+    data:{ labels, datasets:[
+      { label:'קבוע', data:fixed, backgroundColor:'#4a78b5', borderRadius:4 },
+      { label:'משתנה', data:variable, backgroundColor:'#2f8f7a', borderRadius:4 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ x:{stacked:true, ticks:{autoSkip:false}}, y:{stacked:true, ticks:{callback:v=>fmtILS(v)}} }, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtILS(c.parsed.y)}`}} } }
+  });
+}
+
+function renderTable(){
+  const rows = filteredRows().filter(r=>r.monthKey===STATE.month);
+  const sorted = [...rows].sort((a,b)=>{
+    let va, vb;
+    if(STATE.sortKey==='date'){ va=a.dateObj; vb=b.dateObj; }
+    else if(STATE.sortKey==='amount'){ va=a.amount; vb=b.amount; }
+    else { va=a[STATE.sortKey]; vb=b[STATE.sortKey]; }
+    if(va<vb) return -1*STATE.sortDir; if(va>vb) return 1*STATE.sortDir; return 0;
+  });
+  const body = sorted.slice(0,150).map(r=>`<tr>
+      <td>${r.biz}</td><td>${r.cat}</td><td>${r.dateObj instanceof Date && !isNaN(r.dateObj) ? r.dateObj.toLocaleDateString('he-IL') : r.date}</td><td class="amt">${fmtILS(r.amount)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="msg">אין עסקאות</td></tr>';
+  const [tY,tM] = STATE.month.split('-').map(Number);
+  document.getElementById('tableCard').innerHTML = `<h2>תנועות (${monthLabel(tY,tM)})</h2>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th data-k="biz">בית עסק</th><th data-k="cat">קטגוריה</th><th data-k="date">תאריך</th><th class="amt" data-k="amount">סכום</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    ${sorted.length>150 ? `<div class="sub" style="margin-top:.5rem">מוצגות 150 מתוך ${sorted.length} עסקאות</div>`:''}`;
+  document.getElementById('tableCard').querySelectorAll('th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+    const k = th.dataset.k;
+    if(STATE.sortKey===k) STATE.sortDir*=-1; else { STATE.sortKey=k; STATE.sortDir = k==='amount'?-1:-1; }
+    renderTable();
+  }));
+}
+
+function renderApp(){
+  renderFilters();
+  document.getElementById('app').innerHTML = `
+    <div class="section">${scorecardsHtml()}</div>
+    <div class="section twocol">
+      <div class="card" id="donutCard"></div>
+      <div class="card" id="rankCard"></div>
+    </div>
+    <div class="section card" id="barCard"></div>
+    <div class="section card" id="tableCard"></div>
+  `;
+  renderDonutAndRanking();
+  renderMonthlyBars();
+  renderTable();
+}
+
+function render(){ renderApp(); }
+
+loadData().then(()=>{
+  document.getElementById('status').textContent = `${STATE.rows.length} עסקאות`;
+  document.getElementById('updated').textContent = 'עודכן: ' + new Date().toLocaleString('he-IL');
+  renderApp();
+}).catch(err=>{
+  document.getElementById('status').textContent = 'שגיאה בטעינת הנתונים';
+  document.getElementById('app').innerHTML = `<div class="card msg">לא ניתן לטעון את הנתונים.<br><span class="sub">${err.message||''}</span></div>`;
+});
+</script>
+</body>
+</html>
