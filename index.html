@@ -246,14 +246,15 @@ const calloutLabelsPlugin = {
       ctx.fillStyle = labelColor;
       ctx.textAlign = isRight ? 'left' : 'right';
       const maxW = Math.max(16, (isRight ? (area.right - ex) : (ex - area.left)) - 4);
-      const pctText = ` ${Math.round(pct)}%`;
+      const pctLine = `${Math.round(pct)}%`;
       let name = chart.data.labels[i];
-      let label = name + pctText;
-      while(ctx.measureText(label).width > maxW && name.length > 0){
-        name = name.length <= 2 ? '' : name.slice(0, -1);
-        label = name ? name + '…' + pctText : pctText.trim();
+      while(ctx.measureText(name).width > maxW && name.length > 1){
+        name = name.slice(0, -1);
       }
-      ctx.fillText(label, ex + (isRight?4:-4), my);
+      if(name.length < chart.data.labels[i].length) name += '…';
+      const tx = ex + (isRight?4:-4);
+      ctx.fillText(name, tx, my - 7);
+      ctx.fillText(pctLine, tx, my + 7);
     });
     ctx.restore();
   }
