@@ -207,6 +207,59 @@ function scorecardsHtml(){
 let donutChart=null, barChart=null;
 const PALETTE = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948','#898781'];
 
+const calloutLabelsPlugin = {
+  id: 'calloutLabels',
+  afterDraw(chart){
+    if(chart.config.type !== 'doughnut') return;
+    const meta = chart.getDatasetMeta(0);
+    if(!meta || !meta.data.length) return;
+    const dataset = chart.data.datasets[0];
+    const total = dataset.data.reduce((a,b)=>a+b,0) || 1;
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    const labelColor = getComputedStyle(document.body).getPropertyValue('--fg-dim').trim() || '#726b5c';
+    ctx.save();
+    ctx.direction = 'ltr';
+    ctx.font = '11px Assistant, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    meta.data.forEach((arc, i) => {
+      const val = dataset.data[i];
+      if(!val) return;
+      const pct = val/total*100;
+      if(pct < 4) return;
+      const {x, y, startAngle, endAngle, outerRadius} = arc.getProps(['x','y','startAngle','endAngle','outerRadius'], true);
+      const mid = (startAngle+endAngle)/2;
+      const cos = Math.cos(mid), sin = Math.sin(mid);
+      const r1 = outerRadius + 4;
+      const r2 = outerRadius + 12;
+      const sx = x + cos*r1, sy = y + sin*r1;
+      const mx = x + cos*r2, my = y + sin*r2;
+      const isRight = cos >= 0;
+      const ex = mx + (isRight ? 12 : -12);
+      ctx.strokeStyle = labelColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(mx, my);
+      ctx.lineTo(ex, my);
+      ctx.stroke();
+      ctx.fillStyle = labelColor;
+      ctx.textAlign = isRight ? 'left' : 'right';
+      const maxW = Math.max(16, (isRight ? (area.right - ex) : (ex - area.left)) - 4);
+      const pctText = ` ${Math.round(pct)}%`;
+      let name = chart.data.labels[i];
+      let label = name + pctText;
+      while(ctx.measureText(label).width > maxW && name.length > 1){
+        name = name.slice(0, -1);
+        label = name + '…' + pctText;
+      }
+      ctx.fillText(label, ex + (isRight?4:-4), my);
+    });
+    ctx.restore();
+  }
+};
+Chart.register(calloutLabelsPlugin);
+
 function renderDonutAndRanking(){
   const rows = filteredRows().filter(r=>r.monthKey===STATE.month);
   const byCat = {};
@@ -221,10 +274,6 @@ function renderDonutAndRanking(){
   if(prevKey){
     filteredRows().filter(r=>r.monthKey===prevKey).forEach(r=>{ prevByCat[r.cat] = (prevByCat[r.cat]||0) + r.amount; });
   }
-
-  const legend = entries.slice(0,8).map(([cat,val],i)=>
-    `<span style="display:flex;align-items:center;gap:4px;font-size:.75rem;color:var(--fg-dim)"><span style="width:9px;height:9px;border-radius:2px;background:${PALETTE[i%PALETTE.length]};display:inline-block"></span>${cat} ${Math.round(val/total*100)}%</span>`
-  ).join('');
 
   const rankRows = entries.slice(0,8).map(([cat,val],i)=>{
     const pct = Math.max(2, val/entries[0][1]*100);
@@ -244,7 +293,7 @@ function renderDonutAndRanking(){
     </div>`;
   }).join('') || '<div class="msg">אין נתונים לחודש זה</div>';
 
-  document.getElementById('donutCard').innerHTML = `<h2>התפלגות לפי קטגוריה</h2><div style="position:relative;height:200px"><canvas id="donutCanvas" role="img" aria-label="תרשים התפלגות הוצאות לפי קטגוריה"></canvas></div><div class="pill-row" style="justify-content:center">${legend}</div>`;
+  document.getElementById('donutCard').innerHTML = `<h2>התפלגות לפי קטגוריה</h2><div style="position:relative;height:260px"><canvas id="donutCanvas" role="img" aria-label="תרשים התפלגות הוצאות לפי קטגוריה"></canvas></div>`;
   document.getElementById('rankCard').innerHTML = `<h2>דירוג קטגוריות</h2>${rankRows}`;
 
   if(donutChart) donutChart.destroy();
@@ -252,7 +301,7 @@ function renderDonutAndRanking(){
   donutChart = new Chart(ctx, {
     type:'doughnut',
     data:{ labels:entries.map(e=>e[0]), datasets:[{ data:entries.map(e=>e[1]), backgroundColor:entries.map((_,i)=>PALETTE[i%PALETTE.length]), borderColor:getComputedStyle(document.body).getPropertyValue('--surface'), borderWidth:2 }]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtILS(c.parsed)}`}} } }
+    options:{ responsive:true, maintainAspectRatio:false, layout:{padding:{top:28,bottom:28,left:60,right:60}}, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtILS(c.parsed)}`}} } }
   });
 }
 
@@ -318,10 +367,8 @@ function renderApp(){
   renderFilters();
   document.getElementById('app').innerHTML = `
     <div class="section">${scorecardsHtml()}</div>
-    <div class="section twocol">
-      <div class="card" id="donutCard"></div>
-      <div class="card" id="rankCard"></div>
-    </div>
+    <div class="section card" id="donutCard"></div>
+    <div class="section card" id="rankCard"></div>
     <div class="section card" id="barCard"></div>
     <div class="section card" id="tableCard"></div>
   `;
