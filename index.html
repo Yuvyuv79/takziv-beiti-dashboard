@@ -191,7 +191,7 @@ function scorecardsHtml(){
     const pct = ((curVal-prevVal)/Math.abs(prevVal))*100;
     const good = pct < 0;
     const cls = good?'down':'up';
-    const arrow = good?'▲':'▼';
+    const arrow = good?'▼':'▲';
     const [py,pm] = prevKey.split('-').map(Number);
     return `<div class="delta ${cls}">${arrow} ${Math.abs(pct).toFixed(0)}% מול ${monthLabel(py,pm)}</div>`;
   }
@@ -234,7 +234,7 @@ function renderDonutAndRanking(){
       const d = ((val-prevVal)/Math.abs(prevVal))*100;
       const good = d < 0;
       const color = good ? 'var(--positive)' : 'var(--negative)';
-      deltaTxt = `<span style="color:${color};font-size:.72rem;margin-right:4px">${good?'▲':'▼'} ${Math.abs(d).toFixed(0)}%</span>`;
+      deltaTxt = `<span style="color:${color};font-size:.72rem;margin-right:4px">${good?'▼':'▲'} ${Math.abs(d).toFixed(0)}%</span>`;
     } else if(prevKey){
       deltaTxt = `<span style="color:var(--fg-dim);font-size:.72rem;margin-right:4px">חדש</span>`;
     }
