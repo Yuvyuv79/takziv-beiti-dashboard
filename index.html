@@ -249,9 +249,9 @@ const calloutLabelsPlugin = {
       const pctText = ` ${Math.round(pct)}%`;
       let name = chart.data.labels[i];
       let label = name + pctText;
-      while(ctx.measureText(label).width > maxW && name.length > 1){
-        name = name.slice(0, -1);
-        label = name + '…' + pctText;
+      while(ctx.measureText(label).width > maxW && name.length > 0){
+        name = name.length <= 2 ? '' : name.slice(0, -1);
+        label = name ? name + '…' + pctText : pctText.trim();
       }
       ctx.fillText(label, ex + (isRight?4:-4), my);
     });
